@@ -90,27 +90,26 @@ class Field(object):
         self.default = default
 
     def __str__(self):
-        return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type,
-                                self.name)
+        return '<%s, %s:%s>' % (self.__class__.__name__, self.column_type, self.name)
 
 
 # 映射varchar的StringField
 class StringField(Field):
-    def __init__(self,
-                 name=None,
-                 primary_key=False,
-                 default=None,
-                 ddl='varchar(100)'):
+    def __init__(self, name=None, pimary_key=False, ddl='varchar(100)'):
         super().__init__(name, ddl, primary_key, default)
 
 
-class IntgerField(Field):
+class IntergerField(Field):
     def __init__(self,
                  name=None,
                  primary_key=False,
                  default=None,
                  ddl='bigint(100)'):
         super().__init__(name, ddl, primary_key, default)
+
+# 注意到Model只是一个基类，如何将具体的子类如User的映射信息读取出来呢？答案就是通过metaclass：ModelMetaclass
+
+# 这样，任何继承自Model的类（比如User），会自动通过ModelMetaclass扫描映射关系，并存储到自身的类属性如__table__、__mappings__中
 
 
 class ModelMetaclass(type):
@@ -150,15 +149,15 @@ class ModelMetaclass(type):
         attrs['__select__'] = 'select `%s`, %s from `%s`' % (
             primaryKey, ', '.join(escaped_fields), tableName)
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (
-            tableName, ', '.join(escaped_fields, primaryKey,
-                                 create_args_string(len(escaped_fields) + 1)))
+            tableName, ', '.join(escaped_fields, primaryKey, create_args_string(len(escaped_fields) + 1)))
         attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (
             tableName, ', '.join(
                 map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)),
             primaryKey)
-        attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName,
-                                                                 primaryKey)
+        attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (
+            tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
+
 
 # Model从dict继承，所以具备所有dict的功能，同时又实现了特殊方法__getattr__()和__setattr__()，因此又可以像引用普通字段那样写
 # user['id'] => 123
@@ -190,17 +189,11 @@ class Model(dict, metaclass=ModelMetaclass):
                               (key, str(value)))
             return value
 
+# 然后，我们往Model类添加class方法，就可以让所有子类调用class方法
+
     async def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
         arhs.append(self.getValueOrDefault(self.__primary_key__))
         rows = await execute(self.__insert__, args)
         if rows != 1:
             logging.warn('failed to insert record: affected worsL %s' % rows)
-
-
-
-# 注意到Model只是一个基类，如何将具体的子类如User的映射信息读取出来呢？答案就是通过metaclass：ModelMetaclass
-
-# 这样，任何继承自Model的类（比如User），会自动通过ModelMetaclass扫描映射关系，并存储到自身的类属性如__table__、__mappings__中
-
-# 然后，我们往Model类添加class方法，就可以让所有子类调用class方法
