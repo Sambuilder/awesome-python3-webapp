@@ -6,7 +6,8 @@
 # 使用连接池的好处是不必频繁地打开和关闭数据库连接，而是能复用就尽量复用；
 # 连接池由全局变量__pool存储，缺省情况下将编码设置为utf8，自动提交事务
 
-import asyncio, aiomysql
+import asyncio
+import aiomysql
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -78,17 +79,17 @@ class Model(dict, metaclass=ModelMetaclass):
 
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
-    
+
     def __getattr__(self, key):
         try:
             return self[key]
         except KeyError:
             raise AttributeError(r"'Model' object has no attribute '%s'" % key)
 
-    def __setattr__(self,key,value):
+    def __setattr__(self, key, value):
         self[key] = value
 
-     def getValue(self, key) :
+     def getValue(self, key):
          return getattr(self, key, None)
         
     def getValueOrDefault(self, key):
@@ -99,7 +100,14 @@ class Model(dict, metaclass=ModelMetaclass):
                 value = field.default() if callable(field.default) else field.default
                 logging.debug('using default value for %s:%s' % (key, str(value)))
             return value
-
+    
+    async def save(self):
+        args = list(map(self.getValueOrDefault, self.__fields__))
+        arhs.append(self.getValueOrDefault(self.__primary_key__))
+        rows = await execute(self.__insert__, args)
+        if rows != 1:
+            logging.warn('failed to insert record: affected worsL %s' % rows)
+            
 # Model从dict继承，所以具备所有dict的功能，同时又实现了特殊方法__getattr__()和__setattr__()，因此又可以像引用普通字段那样写
 # user['id'] => 123
 # user.id => 123
@@ -162,3 +170,7 @@ class ModelMetaclass(type):
         attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (tableName, ', '.join(map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)), primaryKey)
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
+
+# 这样，任何继承自Model的类（比如User），会自动通过ModelMetaclass扫描映射关系，并存储到自身的类属性如__table__、__mappings__中
+
+# 然后，我们往Model类添加class方法，就可以让所有子类调用class方法
