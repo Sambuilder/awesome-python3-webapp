@@ -16,7 +16,7 @@ def log(sql, args):
     logging.info('SQL: %s' % sql)
 
 
-async def creaet_pool(loop, **kw):
+async def create_pool(loop, **kw):
     logging.info('create database connection pool')
     global __pool
     __pool = await aiomysql.create_pool(
@@ -40,7 +40,7 @@ async def select(sql, args, size=None):
     log(sql, args)
     with (await __pool) as conn:
         cur = await conn.cursor(aiomysql.DictCursor)
-        await cur.execute(sql.replcae('?', '%s'), args or ())
+        await cur.execute(sql.replace('?', '%s'), args or ())
         if size:
             rs = await cur.fetchmany(size)
         else:
@@ -59,9 +59,8 @@ async def select(sql, args, size=None):
 # 要执行INSERT、UPDATE、DELETE语句，可以定义一个通用的execute()函数；
 # 因为这3种SQL的执行都需要相同的参数，以及返回一个整数表示影响的行数
 
-
 async def execute(sql, args):
-    log(sql)
+    log(sql, args)
     with (await __pool) as conn:
         try:
             cur = await conn.cursor()
@@ -73,6 +72,8 @@ async def execute(sql, args):
         return affected
 
 
+def create_args_string(len):
+    return ', '.join(['?'] * len)
 # execute()函数和select()函数所不同的是，cursor对象不返回结果集，而是通过rowcount返回结果数
 
 # ORM
@@ -95,16 +96,12 @@ class Field(object):
 
 # 映射varchar的StringField
 class StringField(Field):
-    def __init__(self, name=None, pimary_key=False, ddl='varchar(100)'):
+    def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
         super().__init__(name, ddl, primary_key, default)
 
 
 class IntergerField(Field):
-    def __init__(self,
-                 name=None,
-                 primary_key=False,
-                 default=None,
-                 ddl='bigint(100)'):
+    def __init__(self, name=None, primary_key=False, default=None, ddl='bigint(100)'):
         super().__init__(name, ddl, primary_key, default)
 
 # 注意到Model只是一个基类，如何将具体的子类如User的映射信息读取出来呢？答案就是通过metaclass：ModelMetaclass
@@ -148,8 +145,10 @@ class ModelMetaclass(type):
         # 构造默认的SELECT, INSERT, UPDATE和DELETE语句
         attrs['__select__'] = 'select `%s`, %s from `%s`' % (
             primaryKey, ', '.join(escaped_fields), tableName)
+        attrs['__selectNumber__'] = 'select count(`%s`) from `%s`' % (
+            primaryKey, tableName)
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (
-            tableName, ', '.join(escaped_fields, primaryKey, create_args_string(len(escaped_fields) + 1)))
+            tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
         attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (
             tableName, ', '.join(
                 map(lambda f: '`%s`=?' % (mappings.get(f).name or f), fields)),
@@ -179,21 +178,57 @@ class Model(dict, metaclass=ModelMetaclass):
         return getattr(self, key, None)
 
     def getValueOrDefault(self, key):
+        logging.info(key)
         value = getattr(self, key, None)
+        logging.info(value)
         if value is None:
             field = self.__mappings__[key]
             if field.default is not None:
-                value = field.default() if callable(
-                    field.default) else field.default
+                value = field.default() if callable(field.default) else field.default
                 logging.debug('using default value for %s:%s' %
                               (key, str(value)))
-            return value
+        return value
 
-# 然后，我们往Model类添加class方法，就可以让所有子类调用class方法
+    # 然后，我们往Model类添加class方法，就可以让所有子类调用class方法
+    # user = yield from User.find(1)
+    @classmethod
+    async def find(cls, pk):
+        ' find object by primary key. '
+        rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [pk], 1)
+        if len(rs) == 0:
+            return None
+        # => Model(self,**{'id':1, 'name':'Test'})  =>  返回一个Model对象，**args是这个**dict
+        return cls(**rs[0])
+
+    # 根据WHERE条件查找
+    async def findAll(self, size=None):
+        args = list(map(self.getValueOrDefault, self.__fields__))
+        rs = await select('%s where %s' %
+                          (self.__select__, ' and '.join(list(map(lambda f: '`%s`=?' % f, self.__fields__)))), args, size)
+        return rs
+
+    async def findNumber(self):
+        args = list(map(self.getValueOrDefault, self.__fields__))
+        rs = await select('%s where %s' % (self.__selectNumber__, ' and '.join(list(map(lambda f: '`%s`=?' % f, self.__fields__)))), args)
+        return list(rs[0].values())[0]
 
     async def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
-        arhs.append(self.getValueOrDefault(self.__primary_key__))
+        # logging.info(args)
+        args.append(self.getValueOrDefault(self.__primary_key__))
         rows = await execute(self.__insert__, args)
         if rows != 1:
-            logging.warn('failed to insert record: affected worsL %s' % rows)
+            logging.warn('failed to insert record: affected rows %s' % rows)
+
+    async def update(self):
+        args = list(map(self.getValueOrDefault, self.__fields__))
+        args.append(self.getValue(self.__primary_key__))
+        rows = await execute(self.__update__, args)
+        if rows != 1:
+            logging.warn('failed to update record: affected rows %s' % rows)
+
+    async def remove(self):
+        args = self.getValue(self.__primary_key__)
+        rows = await execute(self.__delete__, args)
+        if rows != 1:
+            logging.warn('failed to delete record: affected rows %s' % rows)
