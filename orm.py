@@ -59,6 +59,7 @@ async def select(sql, args, size=None):
 # 要执行INSERT、UPDATE、DELETE语句，可以定义一个通用的execute()函数；
 # 因为这3种SQL的执行都需要相同的参数，以及返回一个整数表示影响的行数
 
+# execute()函数和select()函数所不同的是，cursor对象不返回结果集，而是通过rowcount返回结果数
 async def execute(sql, args):
     log(sql, args)
     with (await __pool) as conn:
@@ -70,11 +71,6 @@ async def execute(sql, args):
         except BaseException as e:
             raise
         return affected
-
-
-def create_args_string(len):
-    return ', '.join(['?'] * len)
-# execute()函数和select()函数所不同的是，cursor对象不返回结果集，而是通过rowcount返回结果数
 
 # ORM
 # 有了基本的select()和execute()函数，我们就可以开始编写一个简单的ORM了。
@@ -138,6 +134,10 @@ class ModelMetaclass(type):
         for k in mappings.keys():
             attrs.pop(k)
         escaped_fields = list(map(lambda f: '`%s`' % f, fields))
+
+        def create_args_string(len):
+            return ', '.join(['?'] * len)
+
         attrs['__mapping__'] = mappings  # 保存属性和列的映射关系
         attrs['__table__'] = tableName
         attrs['__primary_key__'] = primaryKey  # 主键属性名
