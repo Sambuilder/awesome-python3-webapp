@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 def log(sql, args):
-    logging.info('SQL: %s' % sql)
+    logging.info('SQL: %s (Args: %s)' % (sql, args))
 
 
 async def create_pool(loop, **kw):
@@ -178,9 +178,7 @@ class Model(dict, metaclass=ModelMetaclass):
         return getattr(self, key, None)
 
     def getValueOrDefault(self, key):
-        logging.info(key)
         value = getattr(self, key, None)
-        logging.info(value)
         if value is None:
             field = self.__mappings__[key]
             if field.default is not None:
