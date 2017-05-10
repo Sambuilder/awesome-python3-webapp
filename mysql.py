@@ -3,7 +3,7 @@
 
 import orm
 import asyncio
-from models import User
+from models import User, Blog, Comment
 
 # u = User(id=1, name='Test')
 # print(u.id)
@@ -11,8 +11,9 @@ from models import User
 
 
 async def test(loop):
-    await orm.create_pool(loop, user='root', host='10.0.0.2', password='root@nse', db='test')
-    u = User(id=1, name='Test')
+    await orm.create_pool(loop, user='www-data', host='10.0.0.2', password='www-data', db='awesome')
+    u = User(name='Test', email='test@example.com',
+             passwd='1234567890', image='about:blank')
     await u.save()
     # r = await User.find(1)
     # r1 = await u.findAll(2)

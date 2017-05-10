@@ -93,12 +93,27 @@ class Field(object):
 # 映射varchar的StringField
 class StringField(Field):
     def __init__(self, name=None, primary_key=False, default=None, ddl='varchar(100)'):
-        super().__init__(name, ddl, primary_key, default)
+        super(StringField, self).__init__(name, ddl, primary_key, default)
 
 
 class IntergerField(Field):
-    def __init__(self, name=None, primary_key=False, default=None, ddl='bigint(100)'):
-        super().__init__(name, ddl, primary_key, default)
+    def __init__(self, name=None, primary_key=False, default=0, ddl='bigint(100)'):
+        super(IntergerField, self).__init__(name, ddl, primary_key, default)
+
+
+class BooleanField(Field):
+    def __init__(self, name=None, primary_key=False, default=False, ddl='boolean'):
+        super(BooleanField, self).__init__(name, ddl, primary_key, default)
+
+
+class FloatField(Field):
+    def __init__(self, name=None, primary_key=False, ddl='real', default=0.0):
+        super(FloatField, self).__init__(name, ddl, primary_key, default)
+
+
+class TextField(Field):
+    def __init__(self, name=None, primary_key=False, ddl='text', default=None):
+        super(TextField, self).__init__(name, ddl, primary_key, default)
 
 # 注意到Model只是一个基类，如何将具体的子类如User的映射信息读取出来呢？答案就是通过metaclass：ModelMetaclass
 
@@ -138,7 +153,7 @@ class ModelMetaclass(type):
         def create_args_string(len):
             return ', '.join(['?'] * len)
 
-        attrs['__mapping__'] = mappings  # 保存属性和列的映射关系
+        attrs['__mappings__'] = mappings  # 保存属性和列的映射关系
         attrs['__table__'] = tableName
         attrs['__primary_key__'] = primaryKey  # 主键属性名
         attrs['__fields__'] = fields  # 除主属性外的属性名
