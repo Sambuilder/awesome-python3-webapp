@@ -1,16 +1,19 @@
 #!/bin/bahs env python3
 # -*- coding: utf-8 -*-
 
+import asyncio
+import json
 import logging
+import os
+import time
+from datetime import datetime
+
+from aiohttp import web
+
+from coroweb import add_routes, add_static
+
 logging.basicConfig(level=logging.INFO)
 
-import asyncio
-import os
-import json
-import time
-from coroweb import add_routes, add_static
-from datetime import datetime
-from aiohttp import web
 
 # middleware是一种拦截器，一个URL在被某个函数处理前，可以经过一系列的middleware的处理;
 # 一个middleware可以改变URL的输入、输出，甚至可以决定不继续处理而直接返回;

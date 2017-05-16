@@ -7,5 +7,6 @@ from aiohttp import web
 
 @get('/index')
 async def handler_url_index(request):
+    users = await 
     body = b'Hello, Index'
     return body
