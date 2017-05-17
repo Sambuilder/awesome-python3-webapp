@@ -160,8 +160,6 @@ class ModelMetaclass(type):
         # 构造默认的SELECT, INSERT, UPDATE和DELETE语句
         attrs['__select__'] = 'select `%s`, %s from `%s`' % (
             primaryKey, ', '.join(escaped_fields), tableName)
-        attrs['__selectNumber__'] = 'select count(`%s`) from `%s`' % (
-            primaryKey, tableName)
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (
             tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
         attrs['__update__'] = 'update `%s` set %s where `%s`=?' % (
@@ -214,16 +212,45 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls(**rs[0])
 
     # 根据WHERE条件查找
-    async def findAll(self, size=None):
-        args = list(map(self.getValueOrDefault, self.__fields__))
-        rs = await select('%s where %s' %
-                          (self.__select__, ' and '.join(list(map(lambda f: '`%s`=?' % f, self.__fields__)))), args, size)
-        return rs
+    @classmethod
+    async def findAll(cls, where=None, args=None, **kw):
+        'find objects by where clause'
+        sql = [cls.__select__]
+        if where:
+            sql.append('where')
+            sql.append(where)
+        if args is None:
+            args = []
+        orderBy = kw.get('orderBy', None)
+        if orderBy:
+            sql.append('order by')
+            sql.append(oderBy)
+        limit = kw.get('limit')
+        if limit is not None:
+            sql.append('limit')
+            if isinstance(limit, int):
+                sql.append('?')
+                args.append(limit)
+            elif isinstance(limit, tuple) and len(limit) == 2:
+                sql.append('?, ?')
+                args.extend(limit)
+            else:
+                raise ValueError('Invalid limit value: %s' % str(limit))
+        rs = await select(' '.join(sql), args)
+        return [cls(**r) for r in rs]
 
-    async def findNumber(self):
-        args = list(map(self.getValueOrDefault, self.__fields__))
-        rs = await select('%s where %s' % (self.__selectNumber__, ' and '.join(list(map(lambda f: '`%s`=?' % f, self.__fields__)))), args)
-        return list(rs[0].values())[0]
+    @classmethod
+    async def findNumber(cls, selectField, where=None, args=None):
+        'find number by select and where'
+        
+        sql = ['select count(%s) as _num_ from `%s`' % (selectField, cls.__table__)]
+        if where:
+            sql.append('where')
+            sql.append(where)
+        rs = await select(' '.join(sql), args, 1)
+        if len(rs) == 0:
+            return None
+        return rs[0]['_num_']
 
     async def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
