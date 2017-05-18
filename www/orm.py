@@ -213,7 +213,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
     # 根据WHERE条件查找
     @classmethod
-    async def findAll(cls, where=None, args=None, **kw):
+    async def findAll(cls, where=None, args=None, orderBy=None, **kw):
         'find objects by where clause'
         sql = [cls.__select__]
         if where:

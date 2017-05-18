@@ -20,7 +20,7 @@ async def handler_url_index(request):
 @get('/test')
 async def handler_url_test(request):
     return {
-        '__template__': 'a.html'
+        '__template__': 'test.html'
     }
 
 
@@ -32,3 +32,13 @@ async def handler_url_blog(request):
         'blogs': blogs
     }
 
+
+@get('/api/users')
+async def handler_api_users(request):
+    # page_index = get_page_index(page)
+    num = await User.findNumber('id')
+    # p = Page(num, page_index)
+    if num == 0:
+        return dict(users=())
+    users = await User.findAll(orderBy='created at desc')
+    return dict(users=users)
