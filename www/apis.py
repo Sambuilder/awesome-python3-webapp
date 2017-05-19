@@ -34,7 +34,6 @@ class APIValueError(APIError):
 
 
 class APIResourceNotFoundError(APIError):
-
     '''
     Indicate the resource was not found. The data specifies the resource name.
     '''

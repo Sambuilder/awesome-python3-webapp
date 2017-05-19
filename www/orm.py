@@ -213,7 +213,7 @@ class Model(dict, metaclass=ModelMetaclass):
 
     # 根据WHERE条件查找
     @classmethod
-    async def findAll(cls, where=None, args=None, orderBy=None, **kw):
+    async def findAll(cls, where=None, args=None, **kw):
         'find objects by where clause'
         sql = [cls.__select__]
         if where:
@@ -224,7 +224,7 @@ class Model(dict, metaclass=ModelMetaclass):
         orderBy = kw.get('orderBy', None)
         if orderBy:
             sql.append('order by')
-            sql.append(oderBy)
+            sql.append(orderBy)
         limit = kw.get('limit')
         if limit is not None:
             sql.append('limit')

@@ -12,11 +12,14 @@ import logging
 logging.basicConfig(level=logging.INFO)
 import os
 import time
+import hashlib
 from datetime import datetime
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader
 from config import configs
 from coroweb import add_routes, add_static
+from models import User
+from handlers import COOKIE_NAME, cookie2user
 
 
 # middleware是一种拦截器，一个URL在被某个函数处理前，可以经过一系列的middleware的处理;
@@ -58,6 +61,20 @@ async def logger_factory(app, handler):
 async def data_factory(app, handler):
     pass
 
+
+async def auth_factory(app, handler):
+    async def auth(request):
+        logging.info('check user: %s %s' % (request.method, request.path))
+        request.__user__ = None
+        cookie_str = request.cookies.get(COOKIE_NAME)
+        if cookie_str:
+            user = await cookie2user(cookie_str)
+            if user:
+                logging.info('set current user: %s' % user.email)
+                reuqest.__user__ = user
+        return (await handler(request))
+    return auth
+
 # response这个middleware把返回值转换为web.Response对象再返回，以保证满足aiohttp的要求
 
 
@@ -90,7 +107,7 @@ async def response_factory(app, handler):
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
         if isinstance(r, int) and r >= 100 and r < 600:
-            return web.Response(r)
+            return web.Response(status=r)
         if isinstance(r, tuple) and len(r) == 2:
             t, m = r
             if isinstance(t, int) and t >= 100 and t < 600:
@@ -118,7 +135,7 @@ def datetime_filter(t):
 
 async def init(loop):
     await orm.create_pool(loop=loop, **configs.db)
-    app = web.Application(loop=loop, middlewares=(logger_factory, response_factory))
+    app = web.Application(loop=loop, middlewares=(logger_factory, auth_factory, response_factory))
     init_jinja2(app, filters=dict(datetime=datetime_filter))
     add_routes(app, 'handlers')
     add_static(app)
