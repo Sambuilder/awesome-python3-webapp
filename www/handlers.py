@@ -3,7 +3,7 @@
 
 from coroweb import get, post
 from aiohttp import web
-from models import User, Blog, next_id
+from models import User, Blog, Comment, next_id
 from apis import APIError, APIPermissionError, APIResourceNotFoundError, APIValueError
 from aiohttp import web
 from config import configs
@@ -25,7 +25,7 @@ _COOKIE_KEY = configs.session.secret
 # 计算加密cookie
 
 
-async def user2cookie(user, max_age):
+def user2cookie(user, max_age):
     # build cookie string by: id-expires-sha1
     expires = str(int(time.time() + max_age))
     s = '%s-%s-%s-%s' % (user.id, user.passwd, expires, _COOKIE_KEY)
@@ -61,8 +61,13 @@ async def cookie2user(cookie_str):
         return None
 
 
+def check_admin(request):
+    if request.__user__ is None or not request.__user__.admin:
+        raise APIPermissionError('operation not authorized.')
+
+
 @get('/')
-async def handler_url_index(request):
+async def handler_url_index():
     users = await User.findAll()
     user_count = await User.findNumber('id')
     return {
@@ -110,6 +115,32 @@ async def handler_url_register(request):
 async def handler_url_signin(request):
     return {
         '__template__': 'signin.html'
+    }
+
+
+@get('/manage/blogs/create')
+async def hanldler_url_manage_blogs_crteate(request):
+    return {
+        '__template__': 'manage_blog_edit.html',
+        'id': '',
+        'action': '/api/blogs'
+    }
+
+
+@get('/api/blogs/{id}')
+async def handler_api_blogid(*, id):
+    blog = await Blog.find(id)
+    return blog
+
+
+@get('/blogs/{id}')
+async def handler_url_blogid(request, *, id):
+    blog = await Blog.find(id)
+    comments = await Comment.findAll(where='blog_id=?', args=[id], orderBy='created_at desc')
+    return {
+        '__template__': 'blog.html',
+        'blog': blog,
+        'comments': comments
     }
 
 # 密码三次加密，含前端js一次
@@ -169,3 +200,18 @@ async def handler_post_api_authenticate(request, *, email, passwd):
     r.content_type = 'application/json'
     r.body = json.dumps(user, ensure_ascii=False).encode('utf-8')
     return r
+
+
+@post('/api/blogs')
+async def handler_post_api_blogs(request, *, name, summary, content):
+    check_admin(request)
+    if not name or not name.strip():
+        raise APIValueError('name', 'name connot be empty.')
+    if not summary or not summary.strip():
+        raise APIValueError('summary', 'summary cannot be empty.')
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
+    blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name,
+                user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
+    await blog.save()
+    return blog
