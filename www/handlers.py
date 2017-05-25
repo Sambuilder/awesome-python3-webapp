@@ -4,9 +4,10 @@
 from coroweb import get, post
 from aiohttp import web
 from models import User, Blog, Comment, next_id
-from apis import APIError, APIPermissionError, APIResourceNotFoundError, APIValueError
+from apis import APIError, APIPermissionError, APIResourceNotFoundError, APIValueError, Page
 from aiohttp import web
 from config import configs
+import markdown2
 import time
 import json
 import hashlib
@@ -61,19 +62,34 @@ async def cookie2user(cookie_str):
         return None
 
 
+def text2html(text):
+    lines = map(lambda s: '<p>%s</p>' % s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'),
+                filter(lambda s: s.strip() != '', text.split('\n')))
+    return ''.join(lines)
+
+
 def check_admin(request):
     if request.__user__ is None or not request.__user__.admin:
         raise APIPermissionError('operation not authorized.')
 
 
+def get_page_index(page_str):
+    p = 1
+    try:
+        p = int(page_str)
+    except ValueError as e:
+        pass
+    if p < 1:
+        p = 1
+    return p
+
+
 @get('/')
-async def handler_url_index():
-    users = await User.findAll()
-    user_count = await User.findNumber('id')
+async def handler_url_index(request):
+    blogs = await Blog.findAll(orderBy='created_at desc')
     return {
-        '__template__': 'test.html',
-        'users': users,
-        'user_count': user_count
+        '__template__': 'blogs.html',
+        'blogs': blogs
     }
 
 
@@ -127,21 +143,44 @@ async def hanldler_url_manage_blogs_crteate(request):
     }
 
 
+@get('/manage/blogs')
+async def handler_url_manage_blogs(*, page='1'):
+    return {
+        '__template__': 'manage_blogs.html',
+        'page_index': get_page_index(page)
+    }
+
+
+@get('/api/blogs')
+async def api_blogs(*, page='1'):
+    page_index = get_page_index(page)
+    num = await Blog.findNumber('id')
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(page=p, blogs=())
+    blogs = await Blog.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
+    return dict(page=p, blogs=blogs)
+
+
 @get('/api/blogs/{id}')
 async def handler_api_blogid(*, id):
     blog = await Blog.find(id)
     return blog
 
 
-@get('/blogs/{id}')
+@get('/blog/{id}')
 async def handler_url_blogid(request, *, id):
     blog = await Blog.find(id)
     comments = await Comment.findAll(where='blog_id=?', args=[id], orderBy='created_at desc')
+    for c in comments:
+        c.html_content = text2html(c.content)
+    blog.html_content = markdown2.markdown(blog.content)
     return {
         '__template__': 'blog.html',
         'blog': blog,
         'comments': comments
     }
+
 
 # 密码三次加密，含前端js一次
 
@@ -214,4 +253,12 @@ async def handler_post_api_blogs(request, *, name, summary, content):
     blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name,
                 user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
     await blog.save()
+    return blog
+
+
+@post('/api/blogs/{blog_id}/delete')
+async def handler_api_delete_by_blog_id(request, *, blog_id):
+    check_admin(request)
+    blog = await Blog.find(blog_id)
+    await blog.remove()
     return blog
