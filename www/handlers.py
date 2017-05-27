@@ -85,11 +85,15 @@ def get_page_index(page_str):
 
 
 @get('/')
-async def handler_url_index(request):
-    blogs = await Blog.findAll(orderBy='created_at desc')
+async def handler_url_index(request, *, page='1'):
+    page_index = get_page_index(page)
+    blogs_count = await Blog.findNumber('id')
+    p = Page(blogs_count, page_index, page_size=5)
+    blogs = await Blog.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
     return {
         '__template__': 'blogs.html',
-        'blogs': blogs
+        'blogs': blogs,
+        'page': p
     }
 
 
@@ -100,37 +104,18 @@ async def handler_url_test(request):
     }
 
 
-@get('/blog')
-async def handler_url_blog(request):
-    blogs = await Blog.findAll()
+# Management
+@get('/manage/')
+async def handler_url_manage(request):
+    r = web.HTTPFound('/manage/comments')
+    return r
+
+
+@get('/manage/blogs')
+async def handler_url_manage_blogs(*, page='1'):
     return {
-        '__template__': 'blogs.html',
-        'blogs': blogs
-    }
-
-
-@get('/api/users')
-async def handler_api_users(request):
-    # page_index = get_page_index(page)
-    num = await User.findNumber('id')
-    # p = Page(num, page_index)
-    if num == 0:
-        return dict(users=())
-    users = await User.findAll(orderBy='created_at desc')
-    return dict(users=users)
-
-
-@get('/register')
-async def handler_url_register(request):
-    return {
-        '__template__': 'register.html'
-    }
-
-
-@get('/signin')
-async def handler_url_signin(request):
-    return {
-        '__template__': 'signin.html'
+        '__template__': 'manage_blogs.html',
+        'page_index': get_page_index(page)
     }
 
 
@@ -143,12 +128,41 @@ async def hanldler_url_manage_blogs_crteate(request):
     }
 
 
-@get('/manage/blogs')
-async def handler_url_manage_blogs(*, page='1'):
+@get('/manage/blogs/edit')
+async def handler_url_eidt_blog_by_blog_id(*, id):
     return {
-        '__template__': 'manage_blogs.html',
+        '__template__': 'manage_blog_edit.html',
+        'id': id,
+        'action': '/api/blogs/edit/%s' % id
+    }
+
+
+@get('/manage/users')
+async def handler_url_manage_users(*, page='1'):
+    return {
+        '__template__': 'manage_users.html',
         'page_index': get_page_index(page)
     }
+
+
+@get('/manage/comments')
+async def handler_url_manage_comments(request, *, page='1'):
+    return {
+        '__template__': 'manage_comments.html',
+        'page_index': get_page_index(page)
+    }
+
+
+# API
+@get('/api/users')
+async def handler_api_users(*, page='1'):
+    page_index = get_page_index(page)
+    num = await User.findNumber('id')
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(users=())
+    users = await User.findAll(orderBy='created_at desc')
+    return dict(page=p, users=users)
 
 
 @get('/api/blogs')
@@ -168,21 +182,68 @@ async def handler_api_blogid(*, id):
     return blog
 
 
-@get('/blog/{id}')
-async def handler_url_blogid(request, *, id):
+@post('/api/blogs')
+async def handler_post_api_blogs(request, *, name, summary, content):
+    check_admin(request)
+    if not name or not name.strip():
+        raise APIValueError('name', 'name connot be empty.')
+    if not summary or not summary.strip():
+        raise APIValueError('summary', 'summary cannot be empty.')
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
+    blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name,
+                user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
+    await blog.save()
+    return blog
+
+
+@post('/api/blogs/edit/{id}')
+async def handler_post_api_blogs_by_blog_id(id, request, *, name, summary, content):
+    check_admin(request)
+    if not name or not name.strip():
+        raise APIValueError('name', 'name connot be empty.')
+    if not summary or not summary.strip():
+        raise APIValueError('summary', 'summary cannot be empty.')
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
     blog = await Blog.find(id)
-    comments = await Comment.findAll(where='blog_id=?', args=[id], orderBy='created_at desc')
-    for c in comments:
-        c.html_content = text2html(c.content)
-    blog.html_content = markdown2.markdown(blog.content)
-    return {
-        '__template__': 'blog.html',
-        'blog': blog,
-        'comments': comments
-    }
+    blog.name, blog.summary, blog.content = name.strip(), summary.strip(), content.strip()
+    await blog.update()
+    return blog
 
 
-# 密码三次加密，含前端js一次
+@post('/api/blogs/{blog_id}/delete')
+async def handler_api_delete_by_blog_id(request, *, blog_id):
+    check_admin(request)
+    blog = await Blog.find(blog_id)
+    await blog.remove()
+    return blog
+
+
+@post('/api/blogs/{blog_id}/comments')
+async def handler_post_api_comments_by_blog_id(blog_id, request, *, content):
+    if not content or not content.strip():
+        raise APIValueError('content', 'content cannot be empty.')
+    comment = Comment(user_id=request.__user__.id, user_name=request.__user__.name, user_image=request.__user__.image,
+                      blog_id=blog_id, content=content.strip())
+    await comment.save()
+    return comment
+
+
+@get('/api/comments')
+async def handler_api_get_comments(request, *, page='1'):
+    page_index = get_page_index(page)
+    comments_count = await Comment.findNumber('id')
+    p = Page(comments_count, page_index)
+    comments = await Comment.findAll(limit=(p.offset, p.limit))
+    return dict(comments=comments, page=p)
+
+
+@post('/api/comments/{comment_id}/delete')
+async def handler_post_api_delete_comment_by_comment_id(comment_id):
+    comment = await Comment.find(comment_id)
+    await comment.remove()
+    return comment
 
 
 @post('/api/users')
@@ -213,6 +274,7 @@ async def handeler_post_api_users(request, *, email, name, passwd):
     return r
 
 
+# 密码三次加密，含前端js一次
 @post('/api/authenticate')
 async def handler_post_api_authenticate(request, *, email, passwd):
     'post:passwd => sha1(email:123456)'
@@ -241,24 +303,47 @@ async def handler_post_api_authenticate(request, *, email, passwd):
     return r
 
 
-@post('/api/blogs')
-async def handler_post_api_blogs(request, *, name, summary, content):
-    check_admin(request)
-    if not name or not name.strip():
-        raise APIValueError('name', 'name connot be empty.')
-    if not summary or not summary.strip():
-        raise APIValueError('summary', 'summary cannot be empty.')
-    if not content or not content.strip():
-        raise APIValueError('content', 'content cannot be empty.')
-    blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name,
-                user_image=request.__user__.image, name=name.strip(), summary=summary.strip(), content=content.strip())
-    await blog.save()
-    return blog
+# Browser
+@get('/register')
+async def handler_url_register(request):
+    return {
+        '__template__': 'register.html'
+    }
 
 
-@post('/api/blogs/{blog_id}/delete')
-async def handler_api_delete_by_blog_id(request, *, blog_id):
-    check_admin(request)
-    blog = await Blog.find(blog_id)
-    await blog.remove()
-    return blog
+@get('/signin')
+async def handler_url_signin(request):
+    return {
+        '__template__': 'signin.html'
+    }
+
+
+@get('/signout')
+async def hadler_url_signout(request):
+    referer = request.headers.get('Referer')
+    r = web.HTTPFound(referer or '/')
+    r.del_cookie(COOKIE_NAME)
+    return r
+
+
+@get('/blog')
+async def handler_url_blog(request):
+    blogs = await Blog.findAll()
+    return {
+        '__template__': 'blogs.html',
+        'blogs': blogs
+    }
+
+
+@get('/blog/{id}')
+async def handler_url_blogid(request, *, id):
+    blog = await Blog.find(id)
+    comments = await Comment.findAll(where='blog_id=?', args=[id], orderBy='created_at desc')
+    for c in comments:
+        c.html_content = text2html(c.content)
+    blog.html_content = markdown2.markdown(blog.content)
+    return {
+        '__template__': 'blog.html',
+        'blog': blog,
+        'comments': comments
+    }
